@@ -18,11 +18,12 @@ from PySide6.QtWidgets import (
     QSlider
 )
 
+from utils.live import YouTubeLiveStream
 from counter import VehicleCounter
 from detector import VehicleDetector
 from utils.pdf_report import generate_pdf
 from ui.style import STYLE
-
+from PySide6.QtWidgets import QInputDialog
 
 # ============================================================
 # VIDEO LABEL
@@ -87,6 +88,12 @@ class MainWindow(QMainWindow):
         # ==================================================
 
         self.cap = None
+
+        # ==========================================
+        # LIVE BUFFER
+        # ==========================================
+
+        self.is_live = False
 
         self.video_name = "Camera"
 
@@ -350,12 +357,17 @@ class MainWindow(QMainWindow):
             "📷 Camera"
         )
 
+
+
+        self.live_btn = QPushButton(
+            "🔴 Live"
+        )
         # ------------------------------------------
         # DRAW LINE
         # ------------------------------------------
 
         self.draw_line_btn = QPushButton(
-            "🔴 Draw Line"
+            "Draw Line"
         )
 
         # ------------------------------------------
@@ -402,6 +414,10 @@ class MainWindow(QMainWindow):
             self.open_camera
         )
 
+        self.live_btn.clicked.connect(
+            self.open_live
+        )
+
         self.draw_line_btn.clicked.connect(
             self.start_drawing_line
         )
@@ -433,6 +449,11 @@ class MainWindow(QMainWindow):
         button_layout.addWidget(
             self.camera_btn
         )
+
+        button_layout.addWidget(
+            self.live_btn
+        )
+                
 
         button_layout.addWidget(
             self.draw_line_btn
@@ -487,6 +508,7 @@ class MainWindow(QMainWindow):
         self.cap = cv2.VideoCapture(
             file_name
         )
+        self.is_live = False
 
         if not self.cap.isOpened():
 
@@ -579,6 +601,7 @@ class MainWindow(QMainWindow):
         self.cap = cv2.VideoCapture(
             0
         )
+        self.is_live = False
 
         if not self.cap.isOpened():
 
@@ -1253,4 +1276,115 @@ class MainWindow(QMainWindow):
             self,
             "Export PDF",
             f"Đã lưu báo cáo:\n{filename}"
+        )
+
+    def open_live(self):
+
+        url, ok = QInputDialog.getText(
+            self,
+            "Live Traffic",
+            "YouTube Live URL:"
+        )
+
+        if not ok or not url.strip():
+            return
+
+        url = url.strip()
+
+        # ==========================================
+        # STOP CURRENT STREAM
+        # ==========================================
+
+        self.timer.stop()
+
+        # ==========================================
+        # GET YOUTUBE STREAM
+        # ==========================================
+
+        try:
+
+            stream = YouTubeLiveStream(
+                url
+            )
+
+            stream_url = (
+                stream.get_stream_url()
+            )
+
+        except Exception as e:
+
+            QMessageBox.critical(
+                self,
+                "Live Error",
+                f"Không thể lấy live stream:\n\n{e}"
+            )
+
+            return
+
+        # ==========================================
+        # OPEN STREAM
+        # ==========================================
+
+        self.cap = cv2.VideoCapture(
+            stream_url,
+            cv2.CAP_FFMPEG
+        )
+
+        # ==========================================
+        # LIVE BUFFER OPTIMIZATION
+        # ==========================================
+
+        self.cap.set(
+            cv2.CAP_PROP_BUFFERSIZE,
+            1
+        )
+
+        if not self.cap.isOpened():
+
+            QMessageBox.critical(
+                self,
+                "Live Error",
+                "Không thể mở YouTube live stream!"
+            )
+
+            self.cap = None
+
+            return
+
+        # ==========================================
+        # SET LIVE MODE
+        # ==========================================
+
+        self.video_name = "YouTube Live"
+
+        self.is_live = True
+
+        self.total_frames = 0
+
+        self.reset_detection()
+
+        # ==========================================
+        # LIVE FPS
+        # ==========================================
+
+        self.timer.setInterval(
+            30
+        )
+
+        # ==========================================
+        # READ FIRST FRAME
+        # ==========================================
+
+        ret, frame = self.cap.read()
+
+        if ret:
+
+            self.last_frame = frame.copy()
+
+            self.show_frame(
+                frame
+            )
+
+        print(
+            "[LIVE] Connected successfully!"
         )
